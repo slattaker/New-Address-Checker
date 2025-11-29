@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Bulk Address Checker – Interactive Maps</title>
+  <style>
+    body { font-family: Arial; margin: 20px; }
+    textarea { width: 100%; height: 150px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+    th, td { padding: 8px; border: 1px solid #ccc; vertical-align: top; }
+    th { background: #f0f0f0; }
+    .map-container {
+      display: flex;
+      gap: 10px;
+      margin-top: 10px;
+    }
+    iframe {
+      width: 100%;
+      height: 300px;
+      border: 1px solid #888;
+      border-radius: 6px;
+    }
+    .half {
+      flex: 1;
+    }
+  </style>
+</head>
+<body>
+
+<h2>Bulk Address Checker (Interactive Google & Bing Maps)</h2>
+
+<p>Enter up to 10 addresses (one per line):</p>
+
+<textarea id="addressInput"></textarea>
+<br><br>
+
+<button onclick="processAddresses()">Check Addresses</button>
+
+<div id="results"></div>
+
+<script>
+const API_KEY = "61901fba20e442c7901f3cddc16ca211";  
+const GOOGLE_KEY = "AIzaSyAajOE_Tajng1yLeepPaYjRKZlD15YHkZQ";  
+
+async function geocodeAddress(address) {
+  const url = `https://api.geoapify.com/v1/geocode/search?text=${encodeURIComponent(address)}&format=json&limit=1&apiKey=${API_KEY}`;
+  let response = await fetch(url);
+  let data = await response.json();
+  if (!data.results || data.results.length === 0) return null;
+  return data.results[0];
+}
+
+async function processAddresses() {
+  let input = document.getElementById("addressInput").value.trim();
+  if (!input) return;
+
+  let addresses = input.split("\n").map(a => a.trim()).filter(a => a);
+  addresses = addresses.slice(0, 10);
+
+  let html = "";
+
+  for (let address of addresses) {
+    let result = await geocodeAddress(address);
+
+    if (!result) {
+      html += `
+        <div style="color:red">Could not geocode: ${address}</div>
+        <hr>
+      `;
+      continue;
+    }
+
+    let lat = result.lat;
+    let lon = result.lon;
+
+    let googleEmbed = `https://www.google.com/maps/embed/v1/view?key=${GOOGLE_KEY}&center=${lat},${lon}&zoom=20&maptype=satellite`;
+    let bingEmbed = `https://www.bing.com/maps/embed?h=300&w=400&cp=${lat}~${lon}&lvl=19&typ=d&sty=a&src=SHELL`;
+
+    html += `
+      <h3>${address}</h3>
+      <p><strong>Coordinates:</strong> ${lat.toFixed(6)}, ${lon.toFixed(6)}</p>
+
+      <div class="map-container">
+        <div class="half">
+          <h4>Google Maps (Interactive)</h4>
+          <iframe src="${googleEmbed}"></iframe>
+        </div>
+
+        <div class="half">
+          <h4>Bing Maps (Interactive)</h4>
+          <iframe src="${bingEmbed}"></iframe>
+        </div>
+      </div>
+
+      <hr>
+    `;
+  }
+
+  document.getElementById("results").innerHTML = html;
+}
+</script>
+
+</body>
+</html>
