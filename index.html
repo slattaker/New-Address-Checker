@@ -1,13 +1,11 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Bulk Address Checker – Interactive Maps</title>
+  <title>Territory Address Checker</title>
   <style>
     body { font-family: Arial; margin: 20px; }
     textarea { width: 100%; height: 150px; }
-    table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-    th, td { padding: 8px; border: 1px solid #ccc; vertical-align: top; }
-    th { background: #f0f0f0; }
+    .hidden { display: none; }
     .map-container {
       display: flex;
       gap: 10px;
@@ -19,36 +17,147 @@
       border: 1px solid #888;
       border-radius: 6px;
     }
-    .half {
-      flex: 1;
-    }
+    .half { flex: 1; }
+    select, input { padding: 6px; margin: 4px; }
+    button { padding: 8px 15px; margin-top: 5px; }
   </style>
 </head>
 <body>
 
-<h2>Bulk Address Checker (Interactive Google & Bing Maps)</h2>
+<!-- LOGIN SCREEN -->
+<div id="loginScreen">
+  <h2>Congregation Login</h2>
+  <p>Enter your congregation passcode:</p>
+  <input type="password" id="passcodeInput" placeholder="Enter passcode">
+  <br><br>
+  <button onclick="verifyPasscode()">Login</button>
+  <p id="loginError" style="color:red;"></p>
+</div>
 
-<p>Enter up to 10 addresses (one per line):</p>
+<!-- MAIN APP SCREEN -->
+<div id="appScreen" class="hidden">
 
-<textarea id="addressInput"></textarea>
-<br><br>
+  <h2>Territory Address Checker</h2>
 
-<button onclick="processAddresses()">Check Addresses</button>
+  <h3 id="congName"></h3>
 
-<div id="results"></div>
+  <!-- TERRITORY SETTINGS -->
+  <label>Territory Type:</label>
+  <select id="territoryType">
+    <option value="City">City</option>
+    <option value="Rural">Rural</option>
+  </select>
+
+  <label>Territory Number:</label>
+  <input id="territoryNumber" type="text" placeholder="Enter territory number">
+
+  <label>Completed By:</label>
+  <select id="publisherSelect"></select>
+
+  <br><br>
+
+  <p>Enter up to 10 addresses (one per line):</p>
+  <textarea id="addressInput"></textarea>
+  <br><br>
+
+  <button onclick="processAddresses()">Check Addresses</button>
+
+  <div id="results"></div>
+</div>
 
 <script>
+/* -----------------------------------------
+   REQUIRED: FILL THESE IN AFTER DEPLOYMENT
+-------------------------------------------*/
 const API_KEY = "61901fba20e442c7901f3cddc16ca211";  
 const GOOGLE_KEY = "AIzaSyAajOE_Tajng1yLeepPaYjRKZlD15YHkZQ";  
 
+const SRH_ENDPOINT = "https://script.google.com/macros/s/AKfycbzZpkndafgNZcbquqDysPstp0hQMG7HegceQTokvWGyigR7te7aU42kMjVL-z2vtU31/exec";
+const ERH_ENDPOINT = "https://script.google.com/macros/s/AKfycbyqh6C4X7ccec8g7rPGUfurid2RUdyEQfevqVxznnXDcsz7GhoUFC9Whk0prEj8L2tjkQ/exec";
+
+/* Congregation passcodes */
+const PASSCODES = {
+  "SRH2025!": {
+    name: "South Rock Hill Congregation",
+    endpoint: SRH_ENDPOINT
+  },
+  "ERH2025!": {
+    name: "East Rock Hill Congregation",
+    endpoint: ERH_ENDPOINT
+  }
+};
+
+let activeCongregation = null;
+
+/* -----------------------------
+   LOGIN LOGIC
+--------------------------------*/
+function verifyPasscode() {
+  const code = document.getElementById("passcodeInput").value.trim();
+
+  if (PASSCODES[code]) {
+    activeCongregation = PASSCODES[code];
+    document.getElementById("loginScreen").classList.add("hidden");
+    document.getElementById("appScreen").classList.remove("hidden");
+    document.getElementById("congName").innerText = activeCongregation.name;
+    loadPublisherList();
+  } else {
+    document.getElementById("loginError").innerText = "Invalid passcode.";
+  }
+}
+
+/* -----------------------------
+   LOAD PUBLISHER LIST (CORS FIX)
+--------------------------------*/
+async function loadPublisherList() {
+  try {
+    let response = await fetch(activeCongregation.endpoint + "?mode=getPublishers", {
+      method: "GET",
+      redirect: "follow"
+    });
+
+    if (!response.ok) {
+      throw new Error("Failed to load publishers. HTTP " + response.status);
+    }
+
+    let text = await response.text();
+
+    if (text.includes("Login") || text.includes("google")) {
+      throw new Error("Your Apps Script is still redirecting to Google Login.\nFix doGet().");
+    }
+
+    let names = text.split("\n").filter(n => n.trim() !== "");
+    let select = document.getElementById("publisherSelect");
+
+    select.innerHTML = "";
+
+    names.forEach(name => {
+      let opt = document.createElement("option");
+      opt.value = name;
+      opt.textContent = name;
+      select.appendChild(opt);
+    });
+
+  } catch (err) {
+    alert("ERROR LOADING PUBLISHERS:\n" + err.message);
+  }
+}
+
+/* -----------------------------
+   GEOCODING
+--------------------------------*/
 async function geocodeAddress(address) {
   const url = `https://api.geoapify.com/v1/geocode/search?text=${encodeURIComponent(address)}&format=json&limit=1&apiKey=${API_KEY}`;
+  
   let response = await fetch(url);
   let data = await response.json();
   if (!data.results || data.results.length === 0) return null;
   return data.results[0];
 }
 
+/* -----------------------------
+   PROCESS ADDRESSES
+--------------------------------*/
 async function processAddresses() {
   let input = document.getElementById("addressInput").value.trim();
   if (!input) return;
@@ -62,10 +171,7 @@ async function processAddresses() {
     let result = await geocodeAddress(address);
 
     if (!result) {
-      html += `
-        <div style="color:red">Could not geocode: ${address}</div>
-        <hr>
-      `;
+      html += `<div style="color:red">Could not geocode: ${address}</div><hr>`;
       continue;
     }
 
@@ -79,14 +185,16 @@ async function processAddresses() {
       <h3>${address}</h3>
       <p><strong>Coordinates:</strong> ${lat.toFixed(6)}, ${lon.toFixed(6)}</p>
 
+      <label><button onclick="markComplete('${address}', ${lat}, ${lon})">Mark Complete</button></label>
+
       <div class="map-container">
         <div class="half">
-          <h4>Google Maps (Interactive)</h4>
+          <h4>Google Maps</h4>
           <iframe src="${googleEmbed}"></iframe>
         </div>
 
         <div class="half">
-          <h4>Bing Maps (Interactive)</h4>
+          <h4>Bing Maps</h4>
           <iframe src="${bingEmbed}"></iframe>
         </div>
       </div>
@@ -97,7 +205,35 @@ async function processAddresses() {
 
   document.getElementById("results").innerHTML = html;
 }
+
+/* -----------------------------
+   SEND COMPLETION TO GOOGLE SHEETS
+--------------------------------*/
+function markComplete(address, lat, lon) {
+  let territoryType = document.getElementById("territoryType").value;
+  let territoryNumber = document.getElementById("territoryNumber").value;
+  let completedBy = document.getElementById("publisherSelect").value;
+
+  fetch(activeCongregation.endpoint, {
+    method: "POST",
+    mode: "no-cors",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      address: address,
+      lat: lat,
+      lon: lon,
+      territoryType: territoryType,
+      territoryNumber: territoryNumber,
+      completedBy: completedBy
+    })
+  });
+
+  alert("Address marked complete!");
+}
 </script>
 
 </body>
 </html>
+
+<!-- 1136 Doris Ct, Rock Hill, South Carolina 29730
+SRH2025! -->
